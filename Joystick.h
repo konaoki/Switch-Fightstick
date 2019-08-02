@@ -71,6 +71,21 @@ typedef enum {
 	SWITCH_CAPTURE = 0x2000,
 } JoystickButtons_t;
 
+typedef enum {
+	HAT_TOP        = 0x00,
+	HAT_TOP_RIGHT  = 0x01,
+	HAT_RIGHT      = 0x02,
+	HAT_BOTTOM_RIGHT= 0x03,
+	HAT_BOTTOM     = 0x04,
+	HAT_BOTTOM_LEFT= 0x05,
+	HAT_LEFT       = 0x06,
+	HAT_TOP_LEFT   = 0x07,
+	HAT_CENTER     = 0x08,
+	STICK_MIN      = 0,
+	STICK_CENTER   = 128,
+	STICK_MAX      = 255,
+} JoystickStates;
+
 // Joystick HID report structure. We have an input and an output.
 typedef struct {
 	uint16_t Button; // 16 buttons; see JoystickButtons_t for bit mapping
@@ -107,4 +122,3 @@ void EVENT_USB_Device_ControlRequest(void);
 void GetNextReport(USB_JoystickReport_Input_t* const ReportData);
 
 #endif
-
