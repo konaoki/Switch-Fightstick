@@ -20,8 +20,8 @@ these buttons for our use.
 
 /** \file
  *
- *  Main source file for the Joystick demo. This file contains the main tasks of the demo and
- *  is responsible for the initial application hardware configuration.
+ *  Main source file for the posts printer demo. This file contains the main tasks of
+ *  the demo and is responsible for the initial application hardware configuration.
  */
 
 #include "Joystick.h"
@@ -77,12 +77,16 @@ void SetupHardware(void) {
 	clock_prescale_set(clock_div_1);
 	// We can then initialize our hardware and peripherals, including the USB stack.
 
-	// Both PORTD and PORTB will be used for handling the buttons and stick.
-	DDRD  &= ~0xFF;
-	PORTD |=  0xFF;
-
-	DDRB  &= ~0xFF;
-	PORTB |=  0xFF;
+	#ifdef ALERT_WHEN_DONE
+	// Both PORTD and PORTB will be used for the optional LED flashing and buzzer.
+	#warning LED and Buzzer functionality enabled. All pins on both PORTB and \
+PORTD will toggle when printing is done.
+	DDRD  = 0xFF; //Teensy uses PORTD
+	PORTD =  0x0;
+                  //We'll just flash all pins on both ports since the UNO R3
+	DDRB  = 0xFF; //uses PORTB. Micro can use either or, but both give us 2 LEDs
+	PORTB =  0x0; //The ATmega328P on the UNO will be resetting, so unplug it?
+	#endif
 	// The USB stack should be initialized last.
 	USB_Init();
 }
@@ -111,40 +115,8 @@ void EVENT_USB_Device_ConfigurationChanged(void) {
 // Process control requests sent to the device from the USB host.
 void EVENT_USB_Device_ControlRequest(void) {
 	// We can handle two control requests: a GetReport and a SetReport.
-	switch (USB_ControlRequest.bRequest)
-	{
-		// GetReport is a request for data from the device.
-		case HID_REQ_GetReport:
-			if (USB_ControlRequest.bmRequestType == (REQDIR_DEVICETOHOST | REQTYPE_CLASS | REQREC_INTERFACE))
-			{
-				// We'll create an empty report.
-				USB_JoystickReport_Input_t JoystickInputData;
-				// We'll then populate this report with what we want to send to the host.
-				GetNextReport(&JoystickInputData);
-				// Since this is a control endpoint, we need to clear up the SETUP packet on this endpoint.
-				Endpoint_ClearSETUP();
-				// Once populated, we can output this data to the host. We do this by first writing the data to the control stream.
-				Endpoint_Write_Control_Stream_LE(&JoystickInputData, sizeof(JoystickInputData));
-				// We then acknowledge an OUT packet on this endpoint.
-				Endpoint_ClearOUT();
-			}
 
-			break;
-		case HID_REQ_SetReport:
-			if (USB_ControlRequest.bmRequestType == (REQDIR_HOSTTODEVICE | REQTYPE_CLASS | REQREC_INTERFACE))
-			{
-				// We'll create a place to store our data received from the host.
-				USB_JoystickReport_Output_t JoystickOutputData;
-				// Since this is a control endpoint, we need to clear up the SETUP packet on this endpoint.
-				Endpoint_ClearSETUP();
-				// With our report available, we read data from the control stream.
-				Endpoint_Read_Control_Stream_LE(&JoystickOutputData, sizeof(JoystickOutputData));
-				// We then send an IN packet on this endpoint.
-				Endpoint_ClearIN();
-			}
-
-			break;
-	}
+	// Not used here, it looks like we don't receive control request from the Switch.
 }
 typedef enum {
 	SYNC_CONTROLLER,
@@ -176,7 +148,7 @@ int jump_count=1;
 void HID_Task(void) {
 	// If the device isn't connected and properly configured, we can't do anything here.
 	if (USB_DeviceState != DEVICE_STATE_Configured)
-	  return;
+		return;
 
 	// We'll start with the OUT endpoint.
 	Endpoint_SelectEndpoint(JOYSTICK_OUT_EPADDR);
@@ -189,7 +161,7 @@ void HID_Task(void) {
 			// We'll create a place to store our data received from the host.
 			USB_JoystickReport_Output_t JoystickOutputData;
 			// We'll then take in that data, setting it up in our storage.
-			Endpoint_Read_Stream_LE(&JoystickOutputData, sizeof(JoystickOutputData), NULL);
+			while(Endpoint_Read_Stream_LE(&JoystickOutputData, sizeof(JoystickOutputData), NULL) != ENDPOINT_RWSTREAM_NoError);
 			// At this point, we can react to this data.
 			if(JoystickOutputData.Button != NULL || JoystickOutputData.HAT != NULL || JoystickOutputData.LX != NULL || JoystickOutputData.LY != NULL || JoystickOutputData.RX != NULL || JoystickOutputData.RY != NULL)
 			{
@@ -210,24 +182,36 @@ void HID_Task(void) {
 		// We'll then populate this report with what we want to send to the host.
 		GetNextReport(&JoystickInputData);
 		// Once populated, we can output this data to the host. We do this by first writing the data to the control stream.
-		Endpoint_Write_Stream_LE(&JoystickInputData, sizeof(JoystickInputData), NULL);
+		while(Endpoint_Write_Stream_LE(&JoystickInputData, sizeof(JoystickInputData), NULL) != ENDPOINT_RWSTREAM_NoError);
 		// We then send an IN packet on this endpoint.
 		Endpoint_ClearIN();
-
-		/* Clear the report data afterwards */
-		// memset(&JoystickInputData, 0, sizeof(JoystickInputData));
 	}
 }
-bool randbool;
-void changeState(State_t s){
-	report_count=0;
-	randbool = rand() & 1;
-	state=s;
-}
-// Prepare the next report for the host.
 
+typedef enum {
+	SYNC_CONTROLLER,
+	SYNC_POSITION,
+	STOP_X,
+	STOP_Y,
+	MOVE_X,
+	MOVE_Y,
+	DONE
+} State_t;
+State_t state = SYNC_CONTROLLER;
+
+#define ECHOES 2
+int echoes = 0;
+USB_JoystickReport_Input_t last_report;
+
+int report_count = 0;
+int xpos = 0;
+int ypos = 0;
+int portsval = 0;
+
+// Prepare the next report for the host.
 void GetNextReport(USB_JoystickReport_Input_t* const ReportData) {
-	/* Clear the report contents */
+
+	// Prepare an empty report
 	memset(ReportData, 0, sizeof(USB_JoystickReport_Input_t));
 	ReportData->LX = STICK_CENTER;
 	ReportData->LY = STICK_CENTER;
