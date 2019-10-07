@@ -166,10 +166,12 @@ typedef enum {
 } Ledge_getup_state;
 int report_count = 0;
 State_t state = SYNC_CONTROLLER;
-State_t second_state = NOT_HIT;
+State_t second_state = MASH;
 State_t third_state = RANDOM_DI;
 int third_state_timeout=250;
-int min_wait=3;
+int min_wait=4;
+int dodge_count=0;
+int jump_count=1;
 // Process and deliver data from IN and OUT endpoints.
 void HID_Task(void) {
 	// If the device isn't connected and properly configured, we can't do anything here.
@@ -275,10 +277,15 @@ void GetNextReport(USB_JoystickReport_Input_t* const ReportData) {
 			break;
 		case AIR_DODGE:
 			if(report_count>third_state_timeout){
-				changeState(RESET);
+				//changeState(RESET);
 			}
-			if(report_count % (min_wait) == 0){
+			if(report_count == 2*(2*dodge_count+1)){
 				ReportData->Button |= SWITCH_ZR;
+				dodge_count++;
+			}
+			if(report_count == 4*jump_count){
+				ReportData->Button |=SWITCH_X;
+				jump_count++;
 			}
 			report_count++;
 			break;
@@ -299,7 +306,7 @@ void GetNextReport(USB_JoystickReport_Input_t* const ReportData) {
 			break;
 		case MASH:
 			if(report_count>third_state_timeout){
-				changeState(RESET);
+				//changeState(RESET);
 			}
 			if(report_count % min_wait*2 < min_wait){
 				ReportData->LX = STICK_MAX;
